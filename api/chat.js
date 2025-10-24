@@ -1,49 +1,37 @@
+// api/chat.js
 import OpenAI from "openai";
 
-export default async function handler(req, res) {
-  // Configuración CORS
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
-  // Responder preflight
-  if (req.method === "OPTIONS") {
-    res.status(200).end();
-    return;
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Método no permitido" });
   }
 
   try {
-    // Leer body manualmente
-    let body = "";
-    for await (const chunk of req) {
-      body += chunk;
-    }
-    const data = JSON.parse(body);
-    const message = data.message || "";
-
-    // Verificar mensaje
+    const { message } = req.body || {};
     if (!message) {
-      res.status(400).json({ error: "No se recibió ningún mensaje." });
-      return;
+      return res.status(400).json({ error: "Mensaje vacío" });
     }
 
-    // Cliente de OpenAI
-    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-    // Llamada a OpenAI
     const completion = await client.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
-        { role: "system", content: "Eres el asistente de GreenView. Ayudas a los clientes a encontrar suelos y fichas técnicas." },
+        {
+          role: "system",
+          content: "Eres un asistente especializado en suelos de madera, vinilo y laminados de GreenView. Responde de forma clara, profesional y empática."
+        },
         { role: "user", content: message }
-      ]
+      ],
     });
 
-    const reply = completion.choices[0].message.content;
-    res.status(200).json({ reply });
+    const reply = completion.choices?.[0]?.message?.content || "Lo siento, no pude generar respuesta.";
+    return res.status(200).json({ reply });
+
   } catch (error) {
-    console.error("Error:", error);
-    res.status(500).json({ error: "Error al procesar la solicitud." });
+    console.error("Error en API:", error);
+    return res.status(500).json({ error: "Error al procesar la solicitud." });
   }
 }
-// force rebuild
