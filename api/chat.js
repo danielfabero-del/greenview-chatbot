@@ -1,6 +1,15 @@
 import OpenAI from "openai";
 
 export default async function handler(req, res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    res.status(200).end();
+    return;
+  }
+
   try {
     const { message } = req.body;
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -8,7 +17,7 @@ export default async function handler(req, res) {
     const response = await client.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
-        { role: "system", content: "Eres un asistente de GreenView que ayuda a los clientes a encontrar productos y fichas técnicas." },
+        { role: "system", content: "Eres el asistente de GreenView. Ayudas a los clientes a encontrar suelos y fichas técnicas." },
         { role: "user", content: message }
       ]
     });
