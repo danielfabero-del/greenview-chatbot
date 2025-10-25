@@ -41,28 +41,58 @@ export default async function handler(req, res) {
 
     console.log('📋 Categorías disponibles:', rows.map(r => r.categoria));
 
-    // 3️⃣ Búsqueda MEJORADA - MÁS FLEXIBLE
+    // 3️⃣ Búsqueda MEJORADA - MÁS PRECISA
     const userMessage = message.toLowerCase().trim();
     console.log('🔍 Buscando:', userMessage);
 
-    // Función de búsqueda OPTIMIZADA
+    // Función de búsqueda MUCHO MÁS PRECISA
     const findSmartMatches = (query, categories) => {
       const matches = [];
       
-      // Palabras clave PRINCIPALES para agrupar búsquedas
-      const searchGroups = {
+      // Normalizar la consulta
+      const cleanQuery = query.replace(/[¿?]/g, '').trim();
+      
+      console.log('🔍 Búsqueda normalizada:', cleanQuery);
+      
+      // PALABRAS CLAVE PRINCIPALES para búsqueda inteligente
+      const searchKeywords = {
+        // LAMINADOS
+        'laminado': 'suelos laminados',
+        'laminados': 'suelos laminados',
+        'suelos laminados': 'suelos laminados',
+        
+        // TARIMAS
         'tarima': ['tarima exterior de bambú', 'tarima exterior sintética'],
-        'laminado': ['suelos laminados'],
-        'laminados': ['suelos laminados'],
+        'tarimas': ['tarima exterior de bambú', 'tarima exterior sintética'],
+        'tarima exterior': ['tarima exterior de bambú', 'tarima exterior sintética'],
+        'bambú': 'tarima exterior de bambú',
+        'bambu': 'tarima exterior de bambú',
+        'sintética': 'tarima exterior sintética',
+        'sintetica': 'tarima exterior sintética',
+        
+        // VINÍLICOS
         'vinílico': ['suelo vinílico en clic', 'suelo vinílico autoportante', 'suelo vinílico pegado', 'suelo vinílico en rollo'],
         'vinilico': ['suelo vinílico en clic', 'suelo vinílico autoportante', 'suelo vinílico pegado', 'suelo vinílico en rollo'],
-        'madera': ['suelos de madera'],
-        'moqueta': ['moqueta'],
-        'cesped': ['césped artificial'],
-        'césped': ['césped artificial'],
-        'fachada': ['fachada'],
-        'accesorios': ['accesorios'],
-        'revestimiento': ['revestimiento vinílico mural']
+        'vinílicos': ['suelo vinílico en clic', 'suelo vinílico autoportante', 'suelo vinílico pegado', 'suelo vinílico en rollo'],
+        'vinilicos': ['suelo vinílico en clic', 'suelo vinílico autoportante', 'suelo vinílico pegado', 'suelo vinílico en rollo'],
+        'suelo vinílico': ['suelo vinílico en clic', 'suelo vinílico autoportante', 'suelo vinílico pegado', 'suelo vinílico en rollo'],
+        
+        // OTRAS CATEGORÍAS
+        'madera': 'suelos de madera',
+        'maderas': 'suelos de madera',
+        'suelos de madera': 'suelos de madera',
+        'moqueta': 'moqueta',
+        'moquetas': 'moqueta',
+        'cesped': 'césped artificial',
+        'césped': 'césped artificial',
+        'cesped artificial': 'césped artificial',
+        'césped artificial': 'césped artificial',
+        'fachada': 'fachada',
+        'fachadas': 'fachada',
+        'accesorios': 'accesorios',
+        'revestimiento': 'revestimiento vinílico mural',
+        'revestimientos': 'revestimiento vinílico mural',
+        'mural': 'revestimiento vinílico mural'
       };
       
       categories.forEach(item => {
@@ -70,75 +100,106 @@ export default async function handler(req, res) {
         let score = 0;
         
         // 1. COINCIDENCIA EXACTA (máxima prioridad)
-        if (query === category) {
+        if (cleanQuery === category) {
           score = 1.0;
+          console.log('🎯 Coincidencia EXACTA:', category);
         }
-        // 2. La categoría contiene TODA la consulta
-        else if (category.includes(query)) {
-          score = 0.95;
-        }
-        // 3. BÚSQUEDA POR GRUPOS - Si la consulta coincide con un grupo
+        // 2. BÚSQUEDA POR PALABRAS CLAVE
         else {
-          for (const [groupKey, groupCategories] of Object.entries(searchGroups)) {
-            if (query.includes(groupKey) && groupCategories.includes(category)) {
-              score = 0.85;
-              break;
+          for (const [keyword, targetCategories] of Object.entries(searchKeywords)) {
+            if (cleanQuery.includes(keyword)) {
+              const targetArray = Array.isArray(targetCategories) ? targetCategories : [targetCategories];
+              
+              if (targetArray.includes(category)) {
+                score = 0.9;
+                console.log(`✅ Palabra clave "${keyword}" → ${category}`);
+                break;
+              }
             }
           }
         }
-        // 4. Coincidencia de palabra individual
+        
+        // 3. COINCIDENCIA PARCIAL (solo si no hay mejor opción)
         if (score === 0) {
-          const specificWords = ['laminado', 'laminados', 'tarima', 'tarimas', 'vinílico', 'vinilico', 'madera', 'moqueta', 'cesped', 'césped', 'fachada'];
-          const hasSpecificWord = specificWords.some(word => 
-            query.includes(word) && category.includes(word)
+          const queryWords = cleanQuery.split(/\s+/).filter(word => word.length > 3);
+          const categoryWords = category.split(/\s+/);
+          
+          const matchingWords = queryWords.filter(qWord => 
+            categoryWords.some(cWord => cWord.includes(qWord))
           );
-          if (hasSpecificWord) {
-            score = 0.7;
+          
+          if (matchingWords.length > 0) {
+            score = 0.5 + (matchingWords.length * 0.1);
+            console.log(`🔄 Coincidencia parcial: ${matchingWords.join(', ')} → ${category}`);
           }
         }
         
-        if (score >= 0.5) {
+        if (score >= 0.6) {
           matches.push({ ...item, score });
         }
       });
       
+      console.log(`📊 Resultados para "${cleanQuery}":`, matches);
       return matches.sort((a, b) => b.score - a.score);
     };
 
     const matches = findSmartMatches(userMessage, rows);
-    console.log('🎯 Coincidencias encontradas:', matches);
 
     let reply = "";
 
     // SIEMPRE usar nuestro sistema de enlaces - NO OpenAI para categorías conocidas
     if (matches.length > 0) {
-      const showAllForGroups = ['tarima', 'vinílico', 'vinilico'].some(term => userMessage.includes(term));
+      const bestMatches = matches.filter(m => m.score >= 0.7);
       
-      if (matches.length === 1) {
-        const match = matches[0];
+      if (bestMatches.length === 1) {
+        const match = bestMatches[0];
         reply = `Perfecto, te interesan los **${match.categoria}**. Puedes ver nuestro catálogo completo aquí: [Ver catálogo de ${match.categoria}](${match.link})`;
       }
-      else if (matches.length > 1) {
-        if (showAllForGroups) {
-          const groupName = userMessage.includes('tarima') ? 'tarima exterior' : 'suelos vinílicos';
-          reply = `Tenemos **varias opciones de ${groupName}**:\n\n` +
-            matches.map(match => 
+      else if (bestMatches.length > 1) {
+        // Agrupar por tipo de producto
+        const hasTarimas = bestMatches.some(m => m.categoria.includes('tarima'));
+        const hasVinilicos = bestMatches.some(m => m.categoria.includes('vinílico'));
+        
+        if (hasTarimas) {
+          reply = `Tenemos **varias opciones de tarima exterior**:\n\n` +
+            bestMatches.map(match => 
               `• **${match.categoria}** - [Ver catálogo](${match.link})`
             ).join('\n') +
             `\n\n¿Te interesa alguna en particular?`;
-        } else {
+        }
+        else if (hasVinilicos) {
+          reply = `Tenemos **varias opciones de suelos vinílicos**:\n\n` +
+            bestMatches.map(match => 
+              `• **${match.categoria}** - [Ver catálogo](${match.link})`
+            ).join('\n') +
+            `\n\n¿Te interesa alguna en particular?`;
+        }
+        else {
           reply = `He encontrado estas opciones relacionadas con "${message}":\n\n` +
-            matches.map(match => 
+            bestMatches.map(match => 
               `• **${match.categoria}** - [Ver catálogo](${match.link})`
             ).join('\n') +
             `\n\n¿Te interesa alguna en particular?`;
         }
       }
+      else {
+        // Coincidencias débiles - usar la mejor
+        const topMatch = matches[0];
+        reply = `¿Te refieres a **${topMatch.categoria}**? Puedes ver nuestro catálogo aquí: [Ver catálogo](${topMatch.link})`;
+      }
     } else {
-      // Solo usar OpenAI para consultas completamente desconocidas
-      const prompt = `Eres IAGreeView, asistente de Distiplas. Especialistas en suelos.
+      // SOLO usar OpenAI cuando realmente no hay coincidencias
+      const availableCategories = rows.map(r => r.categoria).join(', ');
+      
+      const prompt = `Eres IAGreeView, asistente de Distiplas. 
 
-Si el usuario pregunta por algo que no está en nuestro catálogo, sugiere amablemente visitar nuestra web principal.
+CATEGORÍAS DISPONIBLES: ${availableCategories}
+
+INSTRUCCIONES:
+- Si el usuario pregunta por "suelos laminados", di que SÍ tenemos y ofrece el enlace
+- Si pregunta por "tarima" o "bambú", ofrece las tarimas disponibles
+- Si pregunta por algo que NO está en las categorías, sugiere el catálogo general
+- NUNCA digas que no tenemos algo que sí está en las categorías listadas
 
 Usuario: "${message}"`;
 
@@ -155,7 +216,7 @@ Usuario: "${message}"`;
             { role: "user", content: message },
           ],
           temperature: 0.7,
-          max_tokens: 150,
+          max_tokens: 200,
         }),
       });
 
