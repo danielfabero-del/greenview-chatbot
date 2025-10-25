@@ -16,29 +16,32 @@ export default async function handler(req, res) {
     const SHEET_URL =
       "https://docs.google.com/spreadsheets/d/e/2PACX-1vQlxUuVr4XYbPHeIQwI1eQNDnDskBii1PoXwb2F3jry-q4bNcBI8niVnALh4epc5y_4zPEXVTAx0IO_/pub?output=csv";
 
-    // 2️⃣ Descargar el CSV y parsearlo
+        // 2️⃣ Descargar el CSV y parsearlo de forma robusta
     const csvText = await fetch(SHEET_URL).then((r) => r.text());
-    const rows = csvText
+
+    // Quitar posibles comillas y saltos extra
+    const clean = csvText.replace(/"/g, "").trim();
+
+    const rows = clean
       .split("\n")
       .slice(1)
       .map((line) => {
-        const parts = line.split(",");
+        const parts = line.split(/,|;/); // detecta coma o punto y coma
         return {
           categoria: parts[0]?.trim().toLowerCase(),
           link: parts[1]?.trim(),
         };
-      });
+      })
+      .filter((r) => r.categoria && r.link);
 
-    // 3️⃣ Buscar coincidencia con el mensaje del usuario
-    const found = rows.find((obj) =>
-      message.toLowerCase().includes(obj.categoria)
+    // 3️⃣ Buscar coincidencia flexible (palabras clave)
+    const msg = message.toLowerCase();
+    const found = rows.find(
+      (obj) =>
+        msg.includes(obj.categoria) ||
+        msg.includes(obj.categoria.split(" ")[0]) // primera palabra
     );
 
-    let reply = "";
-
-    if (found) {
-      reply = `Puedes ver más sobre **${found.categoria}** aquí: ${found.link}`;
-    } else {
       // 4️⃣ Si no encuentra nada, usar OpenAI
       const prompt = `
 Eres el asistente virtual de GreenView.
