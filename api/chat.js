@@ -12,7 +12,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Falta el campo message" });
 
   try {
-    // 1️⃣ URL pública de tu Google Sheet (en formato CSV)
+    // 1️⃣ URL pública de tu Google Sheet (CSV)
     const SHEET_URL =
       "https://docs.google.com/spreadsheets/d/e/2PACX-1vQlxUuVr4XYbPHeIQwI1eQNDnDskBii1PoXwb2F3jry-q4bNcBI8niVnALh4epc5y_4zPEXVTAx0IO_/pub?output=csv";
 
@@ -32,22 +32,42 @@ export default async function handler(req, res) {
       })
       .filter((r) => r.categoria && r.link);
 
-    console.log("📊 Categorías leídas desde Google Sheets:", rows);
+    console.log("📊 Categorías leídas:", rows.map(r => r.categoria));
 
-    // 3️⃣ Buscar coincidencia parcial
+    // 3️⃣ Calcular similitud básica
     const msg = message.toLowerCase();
-    const found = rows.find(
-      (obj) =>
-        msg.includes(obj.categoria) ||
-        msg.includes(obj.categoria.split(" ")[0])
-    );
+    const similarity = (a, b) => {
+      const wordsA = a.split(" ");
+      const wordsB = b.split(" ");
+      const common = wordsA.filter((w) => wordsB.includes(w));
+      return common.length / Math.max(wordsA.length, wordsB.length);
+    };
+
+    // 4️⃣ Buscar todas las coincidencias relevantes
+    const matches = rows
+      .map((r) => ({ ...r, score: similarity(msg, r.categoria) }))
+      .filter((r) => r.score > 0.3) // relevancia mínima
+      .sort((a, b) => b.score - a.score);
 
     let reply = "";
 
-    if (found) {
-      reply = `Puedes ver más sobre **${found.categoria}** aquí: ${found.link}`;
+    if (matches.length > 0) {
+      if (matches.length === 1) {
+        const r = matches[0];
+        reply = `Puedes ver más sobre **${r.categoria}** aquí: ${r.link}`;
+      } else {
+        // Varias coincidencias: devolver lista
+        reply =
+          "He encontrado varias opciones que pueden interesarte:\n\n" +
+          matches
+            .map(
+              (r) =>
+                `• **${r.categoria}** → [Ver más](${r.link})`
+            )
+            .join("\n");
+      }
     } else {
-      // 4️⃣ Si no encuentra coincidencia, usar OpenAI
+      // 5️⃣ Si no hay coincidencias, usar OpenAI
       const prompt = `
 Eres el asistente virtual de GreenView.
 Responde de forma breve, profesional y cercana sobre suelos y revestimientos.
