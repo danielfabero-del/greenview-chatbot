@@ -10,57 +10,67 @@ export default async function handler(req, res) {
   if (!message) return res.status(400).json({ error: 'Falta el campo message' });
 
   try {
-    const assistantId = 'asst_dHW5ZEgp59eKaKtjLPaUlvPv'; // tu Assistant ID
+    const assistantId = 'asst_dHW5ZEgp59eKaKtjLPaUlvPv';
 
-    // 1️⃣ Crear un nuevo thread con el mensaje del usuario
+    // Crear un thread con el mensaje del usuario
     const threadRes = await fetch('https://api.openai.com/v1/threads', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ messages: [{ role: 'user', content: message }] }),
+      body: JSON.stringify({
+        messages: [{ role: 'user', content: message }],
+      }),
     });
+
     const threadData = await threadRes.json();
     const threadId = threadData.id;
 
-    // 2️⃣ Iniciar el assistant
+    // Iniciar el assistant
     const runRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ assistant_id: assistantId }),
     });
+
     const runData = await runRes.json();
     const runId = runData.id;
 
-    // 3️⃣ Esperar hasta 15 segundos a que el assistant complete
+    // Esperar hasta que el assistant termine (máx. 20s)
     let runStatus = runData.status;
     let attempts = 0;
-    while (runStatus !== 'completed' && attempts < 15) {
-      await new Promise(r => setTimeout(r, 1000));
-      const check = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs/${runId}`, {
-        headers: { 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` },
+
+    while (runStatus !== 'completed' && runStatus !== 'failed' && runStatus !== 'cancelled' && attempts < 20) {
+      await new Promise((r) => setTimeout(r, 1000));
+      const checkRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs/${runId}`, {
+        headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
       });
-      const status = await check.json();
-      runStatus = status.status;
-      if (runStatus === 'failed' || runStatus === 'cancelled') break;
+      const checkData = await checkRes.json();
+      runStatus = checkData.status;
       attempts++;
     }
 
-    // 4️⃣ Recuperar los mensajes generados
+    // Obtener los mensajes del assistant
     const messagesRes = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
-      headers: { 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` },
+      headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
     });
+
     const messagesData = await messagesRes.json();
 
-    const lastMessage =
-      messagesData.data?.find(m => m.role === 'assistant')?.content?.[0]?.text?.value ||
-      'No encontré información o la respuesta tardó demasiado.';
+    // Buscar el mensaje más reciente del assistant
+    const assistantMessage = messagesData.data
+      ?.filter((m) => m.role === 'assistant' && m.content?.length)
+      ?.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
 
-    res.status(200).json({ reply: lastMessage });
+    const reply =
+      assistantMessage?.content?.[0]?.text?.value ||
+      'No encontré información o la respuesta no llegó a tiempo.';
+
+    res.status(200).json({ reply });
   } catch (error) {
     console.error('Error en el servidor:', error);
     res.status(500).json({ error: 'Error al conectar con el asistente de OpenAI' });
