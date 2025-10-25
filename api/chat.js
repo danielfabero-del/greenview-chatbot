@@ -9,33 +9,60 @@ export default async function handler(req, res) {
   const { message } = req.body || {};
   if (!message) return res.status(400).json({ error: 'Falta el campo message' });
 
+  const apiKey = process.env.OPENAI_API_KEY;
+  const assistantId = "asst_dHW5ZEgp59eKaKtjLPaUlvPv"; // ✅ Tu Assistant ID
+
   try {
-    // 🔧 Usa tu ID real de Assistant
-    const response = await fetch('https://api.openai.com/v1/threads/runs', {
-      method: 'POST',
+    // 1️⃣ Crear un thread
+    const threadRes = await fetch("https://api.openai.com/v1/threads", {
+      method: "POST",
       headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        assistant_id: 'asst_dHW5ZEgp59eKaKtjLPaUlvPv', // 👈 cambia solo esto
-        thread: {
-          messages: [{ role: 'user', content: message }],
-        },
+        messages: [{ role: "user", content: message }],
       }),
     });
+    const thread = await threadRes.json();
 
-    const data = await response.json();
+    // 2️⃣ Crear un run con el assistant
+    const runRes = await fetch(`https://api.openai.com/v1/threads/${thread.id}/runs`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        assistant_id: assistantId,
+      }),
+    });
+    const run = await runRes.json();
 
-    // Extrae el texto de la respuesta del assistant
-    const reply =
-      data.output?.[0]?.content?.[0]?.text?.value ||
-      data.output?.[0]?.content?.[0]?.text ||
-      'No encontré información.';
+    // 3️⃣ Esperar a que el run termine (polling cada segundo)
+    let runStatus = run.status;
+    while (runStatus === "queued" || runStatus === "in_progress") {
+      await new Promise((r) => setTimeout(r, 1000));
+      const statusRes = await fetch(`https://api.openai.com/v1/threads/${thread.id}/runs/${run.id}`, {
+        headers: { "Authorization": `Bearer ${apiKey}` },
+      });
+      const statusData = await statusRes.json();
+      runStatus = statusData.status;
+    }
+
+    // 4️⃣ Obtener los mensajes del thread (la respuesta final)
+    const messagesRes = await fetch(`https://api.openai.com/v1/threads/${thread.id}/messages`, {
+      headers: { "Authorization": `Bearer ${apiKey}` },
+    });
+    const messagesData = await messagesRes.json();
+
+    // 5️⃣ Buscar el último mensaje del assistant
+    const last = messagesData.data.find(m => m.role === "assistant");
+    const reply = last?.content?.[0]?.text?.value || "No encontré información.";
 
     res.status(200).json({ reply });
   } catch (error) {
-    console.error('Error en el servidor:', error);
-    res.status(500).json({ error: 'Error al conectar con el asistente de OpenAI' });
+    console.error("Error en el servidor:", error);
+    res.status(500).json({ error: "Error al conectar con el asistente de OpenAI" });
   }
 }
