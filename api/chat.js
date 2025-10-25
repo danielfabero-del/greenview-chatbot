@@ -4,42 +4,46 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
   if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "POST") return res.status(405).json({ error: "Método no permitido" });
+  if (req.method !== "POST")
+    return res.status(405).json({ error: "Método no permitido" });
 
   const { message } = req.body || {};
-  if (!message) return res.status(400).json({ error: "Falta el campo message" });
+  if (!message)
+    return res.status(400).json({ error: "Falta el campo message" });
 
   try {
-    const AIRTABLE_URL =
-      "https://airtable.com/appbX9MMdbKvfN78m/shrlpu3h99yjmYcEQ";
+    // 1️⃣ URL pública de tu Google Sheet (ya en formato CSV)
+    const SHEET_URL =
+      "https://docs.google.com/spreadsheets/d/e/2PACX-1vQlxUuVr4XYbPHeIQwI1eQNDnDskBii1PoXwb2F3jry-q4bNcBI8niVnALh4epc5y_4zPEXVTAx0IO_/pub?output=csv";
 
-    // 1️⃣ Obtener HTML público de Airtable
-    const response = await fetch(AIRTABLE_URL);
-    const html = await response.text();
-
-    // 2️⃣ Extraer las filas básicas del HTML (categorías y links)
-    const regex = />\s*([^<]+)\s*<\/a>\s*<\/td><td[^>]*><a href="([^"]+)"/g;
-    const matches = [...html.matchAll(regex)].map(m => ({
-      categoria: m[1].trim(),
-      link: m[2].trim()
-    }));
+    // 2️⃣ Descargar el CSV y parsearlo
+    const csvText = await fetch(SHEET_URL).then((r) => r.text());
+    const rows = csvText
+      .split("\n")
+      .slice(1)
+      .map((line) => {
+        const parts = line.split(",");
+        return {
+          categoria: parts[0]?.trim().toLowerCase(),
+          link: parts[1]?.trim(),
+        };
+      });
 
     // 3️⃣ Buscar coincidencia con el mensaje del usuario
-    const found = matches.find(obj =>
-      message.toLowerCase().includes(obj.categoria.toLowerCase().split(" ")[1]) ||
-      message.toLowerCase().includes(obj.categoria.toLowerCase())
+    const found = rows.find((obj) =>
+      message.toLowerCase().includes(obj.categoria)
     );
 
     let reply = "";
 
     if (found) {
-      reply = `✅ (Airtable público) Encontrado: **${found.categoria}** → ${found.link}`;
+      reply = `Puedes ver más sobre **${found.categoria}** aquí: ${found.link}`;
     } else {
-      // 4️⃣ Si no encuentra nada, responder con OpenAI
+      // 4️⃣ Si no encuentra nada, usar OpenAI
       const prompt = `
-Eres el asistente de GreenView.
-Responde de forma breve, amable y profesional sobre suelos y revestimientos.
-Si no encuentras una categoría concreta, invita a visitar https://www.greenview.es
+Eres el asistente virtual de GreenView.
+Responde de forma profesional, cercana y breve sobre suelos y revestimientos.
+Si el usuario menciona una categoría o marca no listada, sugiere visitar https://www.greenview.es.
       `;
 
       const aiRes = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -59,12 +63,17 @@ Si no encuentras una categoría concreta, invita a visitar https://www.greenview
       });
 
       const data = await aiRes.json();
-      reply = data.choices?.[0]?.message?.content || "No se pudo obtener respuesta.";
+      reply =
+        data.choices?.[0]?.message?.content ||
+        "No se pudo obtener respuesta del asistente.";
     }
 
+    // 5️⃣ Devolver respuesta
     res.status(200).json({ reply });
   } catch (error) {
     console.error("Error en el servidor:", error);
-    res.status(500).json({ error: "Error al procesar la solicitud." });
+    res
+      .status(500)
+      .json({ error: "Error al procesar la solicitud o al conectar con el asistente." });
   }
 }
