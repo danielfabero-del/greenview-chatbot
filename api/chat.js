@@ -12,21 +12,19 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Falta el campo message" });
 
   try {
-    // 1️⃣ URL pública de tu Google Sheet (ya en formato CSV)
+    // 1️⃣ URL pública de tu Google Sheet (en formato CSV)
     const SHEET_URL =
       "https://docs.google.com/spreadsheets/d/e/2PACX-1vQlxUuVr4XYbPHeIQwI1eQNDnDskBii1PoXwb2F3jry-q4bNcBI8niVnALh4epc5y_4zPEXVTAx0IO_/pub?output=csv";
 
-        // 2️⃣ Descargar el CSV y parsearlo de forma robusta
+    // 2️⃣ Descargar y limpiar CSV
     const csvText = await fetch(SHEET_URL).then((r) => r.text());
-
-    // Quitar posibles comillas y saltos extra
     const clean = csvText.replace(/"/g, "").trim();
 
     const rows = clean
       .split("\n")
       .slice(1)
       .map((line) => {
-        const parts = line.split(/,|;/); // detecta coma o punto y coma
+        const parts = line.split(/,|;/);
         return {
           categoria: parts[0]?.trim().toLowerCase(),
           link: parts[1]?.trim(),
@@ -34,19 +32,26 @@ export default async function handler(req, res) {
       })
       .filter((r) => r.categoria && r.link);
 
-    // 3️⃣ Buscar coincidencia flexible (palabras clave)
+    console.log("📊 Categorías leídas desde Google Sheets:", rows);
+
+    // 3️⃣ Buscar coincidencia parcial
     const msg = message.toLowerCase();
     const found = rows.find(
       (obj) =>
         msg.includes(obj.categoria) ||
-        msg.includes(obj.categoria.split(" ")[0]) // primera palabra
+        msg.includes(obj.categoria.split(" ")[0])
     );
 
-      // 4️⃣ Si no encuentra nada, usar OpenAI
+    let reply = "";
+
+    if (found) {
+      reply = `Puedes ver más sobre **${found.categoria}** aquí: ${found.link}`;
+    } else {
+      // 4️⃣ Si no encuentra coincidencia, usar OpenAI
       const prompt = `
 Eres el asistente virtual de GreenView.
-Responde de forma profesional, cercana y breve sobre suelos y revestimientos.
-Si el usuario menciona una categoría o marca no listada, sugiere visitar https://www.greenview.es.
+Responde de forma breve, profesional y cercana sobre suelos y revestimientos.
+Si el usuario menciona algo fuera de las categorías listadas, sugiere visitar https://www.greenview.es.
       `;
 
       const aiRes = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -71,10 +76,9 @@ Si el usuario menciona una categoría o marca no listada, sugiere visitar https:
         "No se pudo obtener respuesta del asistente.";
     }
 
-    // 5️⃣ Devolver respuesta
     res.status(200).json({ reply });
   } catch (error) {
-    console.error("Error en el servidor:", error);
+    console.error("❌ Error en el servidor:", error);
     res
       .status(500)
       .json({ error: "Error al procesar la solicitud o al conectar con el asistente." });
