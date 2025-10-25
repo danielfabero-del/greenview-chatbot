@@ -32,21 +32,24 @@ export default async function handler(req, res) {
       })
       .filter((r) => r.categoria && r.link);
 
-    console.log("📊 Categorías leídas:", rows.map(r => r.categoria));
-
-    // 3️⃣ Calcular similitud básica
+    // 3️⃣ Cálculo de relevancia flexible
     const msg = message.toLowerCase();
-    const similarity = (a, b) => {
-      const wordsA = a.split(" ");
-      const wordsB = b.split(" ");
-      const common = wordsA.filter((w) => wordsB.includes(w));
-      return common.length / Math.max(wordsA.length, wordsB.length);
+
+    const scoreMatch = (query, target) => {
+      // coincidencia directa
+      if (query.includes(target)) return 1;
+      // coincidencia parcial
+      const words = target.split(" ");
+      const hits = words.filter((w) => query.includes(w));
+      return hits.length / words.length;
     };
 
-    // 4️⃣ Buscar todas las coincidencias relevantes
     const matches = rows
-      .map((r) => ({ ...r, score: similarity(msg, r.categoria) }))
-      .filter((r) => r.score > 0.3) // relevancia mínima
+      .map((r) => ({
+        ...r,
+        score: scoreMatch(msg, r.categoria),
+      }))
+      .filter((r) => r.score > 0.4) // umbral mínimo más estricto
       .sort((a, b) => b.score - a.score);
 
     let reply = "";
@@ -56,18 +59,16 @@ export default async function handler(req, res) {
         const r = matches[0];
         reply = `Puedes ver más sobre **${r.categoria}** aquí: ${r.link}`;
       } else {
-        // Varias coincidencias: devolver lista
         reply =
           "He encontrado varias opciones que pueden interesarte:\n\n" +
           matches
             .map(
-              (r) =>
-                `• **${r.categoria}** → [Ver más](${r.link})`
+              (r) => `• **${r.categoria}** → [Ver más](${r.link})`
             )
             .join("\n");
       }
     } else {
-      // 5️⃣ Si no hay coincidencias, usar OpenAI
+      // 4️⃣ Si no encuentra coincidencia, usar OpenAI
       const prompt = `
 Eres el asistente virtual de GreenView.
 Responde de forma breve, profesional y cercana sobre suelos y revestimientos.
