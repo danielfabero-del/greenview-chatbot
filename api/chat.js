@@ -36,7 +36,7 @@ export default async function handler(req, res) {
       })
       .filter(row => row && row.categoria && row.link);
 
-    // 3️⃣ Búsqueda MEJORADA - MÁS PRECISA
+    // 3️⃣ Búsqueda MÁS AGRESIVA - ENCONTRAR SIEMPRE QUE EXISTA
     const userMessage = message.toLowerCase().trim();
 
     const findMatches = (query, categories) => {
@@ -44,145 +44,117 @@ export default async function handler(req, res) {
       
       const cleanQuery = query.replace(/[¿?]/g, '').trim();
       
-      // BÚSQUEDA POR COINCIDENCIA DIRECTA PRIMERO
+      // PRIMERO: Búsqueda DIRECTA en todas las categorías
       categories.forEach(item => {
         const category = item.categoria.toLowerCase();
         
-        // 1. Coincidencia EXACTA (máxima prioridad)
+        // Coincidencia EXACTA
         if (cleanQuery === category) {
           matches.push({ ...item, score: 1.0 });
         }
-        // 2. La categoría contiene la consulta COMPLETA
+        // Categoría CONTIENE consulta
         else if (category.includes(cleanQuery)) {
           matches.push({ ...item, score: 0.9 });
         }
-        // 3. La consulta contiene la categoría COMPLETA
+        // Consulta CONTIENE categoría
         else if (cleanQuery.includes(category)) {
           matches.push({ ...item, score: 0.8 });
         }
       });
 
-      // SI NO HAY COINCIDENCIAS DIRECTAS, buscar por palabras clave
+      // SEGUNDO: Si no hay coincidencias directas, buscar por palabras
       if (matches.length === 0) {
-        const keywordMap = {
-          // LAMINADOS - CORREGIDO
-          'laminado': 'suelos laminados',
-          'laminados': 'suelos laminados',
-          
-          // TARIMAS
-          'tarima': ['tarima exterior de bambú', 'tarima exterior sintética'],
-          'tarimas': ['tarima exterior de bambú', 'tarima exterior sintética'],
-          'bambú': ['tarima exterior de bambú', 'tarima exterior sintética'],
-          'bambu': ['tarima exterior de bambú', 'tarima exterior sintética'],
-          
-          // VINÍLICOS - CORREGIDO (separado de tarimas)
-          'vinílico': ['suelo vinílico en clic', 'suelo vinílico autoportante', 'suelo vinílico pegado', 'suelo vinílico en rollo'],
-          'vinilico': ['suelo vinílico en clic', 'suelo vinílico autoportante', 'suelo vinílico pegado', 'suelo vinílico en rollo'],
-          'vinilo': ['suelo vinílico en clic', 'suelo vinílico autoportante', 'suelo vinílico pegado', 'suelo vinílico en rollo'],
-          'vínilo': ['suelo vinílico en clic', 'suelo vinílico autoportante', 'suelo vinílico pegado', 'suelo vinílico en rollo'],
-          
-          // OTRAS
-          'madera': 'suelos de madera',
-          'moqueta': 'moqueta',
-          'cesped': 'césped artificial',
-          'fachada': 'fachada',
-          'accesorios': 'accesorios',
-          'revestimiento': 'revestimiento vinílico mural',
-          'porcelana': 'suelos de porcelana'
-        };
+        const searchWords = cleanQuery.split(/\s+/).filter(word => word.length > 3);
         
-        for (const [keyword, target] of Object.entries(keywordMap)) {
-          if (cleanQuery.includes(keyword)) {
-            const targets = Array.isArray(target) ? target : [target];
-            targets.forEach(targetCat => {
-              const match = categories.find(cat => cat.categoria === targetCat);
-              if (match && !matches.some(m => m.categoria === targetCat)) {
-                matches.push({ ...item, score: 0.7 });
-              }
-            });
+        categories.forEach(item => {
+          const category = item.categoria.toLowerCase();
+          let score = 0;
+          
+          // Cada palabra de la consulta en la categoría
+          searchWords.forEach(word => {
+            if (category.includes(word)) {
+              score += 0.3;
+            }
+          });
+          
+          if (score > 0) {
+            matches.push({ ...item, score });
           }
-        }
+        });
       }
       
       return matches.sort((a, b) => b.score - a.score);
     };
 
     const matches = findMatches(userMessage, rows);
+    console.log('🔍 Búsqueda:', userMessage, 'Resultados:', matches.length);
 
     let reply = "";
 
-    // DETECTAR RESPUESTAS CORTAS ("sí", "no", "ok") - Usar OpenAI para contexto
-    const shortResponses = ['si', 'sí', 'no', 'ok', 'vale', 'claro'];
-    const isShortResponse = shortResponses.includes(userMessage.replace(/[¿?¡!]/g, '').trim());
-
-    if (matches.length > 0 && !isShortResponse) {
-      // Para "sí", "no" - usar OpenAI para mantener contexto
-      const showBothTarimas = userMessage.includes('bambu') || userMessage.includes('bambú') || 
-                             (userMessage.includes('tarima') && !userMessage.includes('vin'));
-      
-      if (matches.length === 1 && !showBothTarimas) {
-        const match = matches[0];
-        reply = `Perfecto, te interesan los **${match.categoria}**. Puedes ver nuestro catálogo completo aquí: [Ver catálogo de ${match.categoria}](${match.link})`;
-      }
-      else {
-        const relevantMatches = showBothTarimas 
-          ? matches.filter(m => m.categoria.includes('tarima'))
-          : matches.filter(m => !userMessage.includes('tarima') || m.categoria.includes('tarima'));
-        
-        if (relevantMatches.length === 1) {
-          const match = relevantMatches[0];
-          reply = `Perfecto, te interesan los **${match.categoria}**. Puedes ver nuestro catálogo completo aquí: [Ver catálogo de ${match.categoria}](${match.link})`;
-        }
-        else {
-          const groupName = showBothTarimas ? 'tarima exterior' : 
-                           userMessage.includes('vinil') ? 'suelos vinílicos' : 'opciones relacionadas';
-          
-          reply = `Tenemos **varias opciones de ${groupName}**:\n\n` +
-            relevantMatches.map(match => 
-              `• **${match.categoria}** - [Ver catálogo](${match.link})`
-            ).join('\n') +
-            `\n\n¿Te interesa alguna en particular?`;
-        }
+    // REGLA PRINCIPAL: SI HAY COINCIDENCIA > 0.5, MOSTRAR ENLACE SIEMPRE
+    const goodMatches = matches.filter(m => m.score >= 0.5);
+    
+    if (goodMatches.length > 0) {
+      // SIEMPRE dar enlace directo cuando hay coincidencia buena
+      if (goodMatches.length === 1) {
+        const match = goodMatches[0];
+        reply = `**${match.categoria}** - [Ver catálogo completo aquí](${match.link})`;
+      } else {
+        reply = `**Opciones encontradas:**\n\n` +
+          goodMatches.map(match => 
+            `• **${match.categoria}** - [Ver catálogo](${match.link})`
+          ).join('\n') +
+          `\n\n¿Te interesa alguna en particular?`;
       }
     } else {
-      // Para respuestas cortas o sin coincidencias, usar OpenAI
+      // SOLO OpenAI cuando NO HAY NINGUNA coincidencia
       const availableCategories = rows.map(r => r.categoria).join(', ');
       
-      const prompt = `Eres IAGreeView, asistente de Distiplas. 
-CATEGORÍAS: ${availableCategories}
+      const prompt = `Eres IAGreeView, asistente de Distiplas. Especialista en suelos.
 
-Si el usuario dice "sí", "no" o respuestas cortas sin contexto, pregunta amablemente a qué se refiere.
-Para "suelos laminados", confirma que SÍ tenemos.
-Mantén conversaciones naturales.`;
+CATEGORÍAS DISPONIBLES: ${availableCategories}
 
-      const aiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          messages: [
-            { role: "system", content: prompt },
-            { role: "user", content: message },
-          ],
-          temperature: 0.7,
-          max_tokens: 150,
-        }),
-      });
+INSTRUCCIONES CRÍTICAS:
+- Si el usuario menciona CUALQUIER categoría de la lista, DEBES proporcionar el enlace correspondiente
+- Si no es sobre suelos, responde brevemente y redirige al tema
+- Para "suelos laminados", ofrecer el enlace directo
+- Sé conciso y útil
 
-      const data = await aiResponse.json();
-      reply = data.choices?.[0]?.message?.content || 
-        "¿Podrías especificar a qué producto te refieres?";
+Usuario: "${message}"`;
+
+      try {
+        const aiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "gpt-4o-mini",
+            messages: [
+              { role: "system", content: prompt },
+              { role: "user", content: message },
+            ],
+            temperature: 0.7,
+            max_tokens: 100,
+          }),
+        });
+
+        const data = await aiResponse.json();
+        reply = data.choices?.[0]?.message?.content || 
+          "¿En qué puedo ayudarte con nuestros suelos y revestimientos?";
+      } catch (aiError) {
+        // Si OpenAI falla, respuesta de respaldo
+        reply = "¿Te interesa algún tipo de suelo en particular? Tenemos opciones como suelos laminados, de madera, vinílicos, y más.";
+      }
     }
 
     res.status(200).json({ reply });
 
   } catch (error) {
-    console.error("❌ Error:", error);
+    console.error("❌ Error general:", error);
     res.status(500).json({ 
-      error: "Error al procesar la solicitud."
+      error: "Error temporal. Por favor, intenta de nuevo."
     });
   }
 }
