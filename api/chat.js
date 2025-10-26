@@ -19,9 +19,7 @@ export default async function handler(req, res) {
     const csvResponse = await fetch(SHEET_URL);
     const csvText = await csvResponse.text();
     
-    console.log('📊 CSV descargado:', csvText.substring(0, 200));
-
-    // Procesar CSV correctamente
+    // Procesar CSV
     const rows = csvText
       .split('\n')
       .slice(1)
@@ -39,36 +37,25 @@ export default async function handler(req, res) {
       })
       .filter(row => row && row.categoria && row.link);
 
-    console.log('📋 Categorías disponibles:', rows.map(r => r.categoria));
-
-    // 3️⃣ Búsqueda SIMPLE Y EFECTIVA
+    // 3️⃣ Búsqueda SIMPLE
     const userMessage = message.toLowerCase().trim();
-    console.log('🔍 Buscando:', userMessage);
 
-    // Función de búsqueda SIMPLE - SIN COMPLICACIONES
     const findMatches = (query, categories) => {
       const matches = [];
       
       const cleanQuery = query.replace(/[¿?]/g, '').trim();
       
-      // PALABRAS CLAVE BÁSICAS - SOLO LAS ESENCIALES
+      // Búsqueda por palabras clave básicas
       const keywordMap = {
-        // LAMINADOS
         'laminado': 'suelos laminados',
         'laminados': 'suelos laminados',
-        
-        // TARIMAS - BAMBÚ muestra AMBAS
         'tarima': ['tarima exterior de bambú', 'tarima exterior sintética'],
-        'tarimas': ['tarima exterior de bambú', 'tarima exterior sintética'], 
-        'bambú': ['tarima exterior de bambú', 'tarima exterior sintética'], // ✅ CAMBIO CLAVE
-        'bambu': ['tarima exterior de bambú', 'tarima exterior sintética'], // ✅ CAMBIO CLAVE
-        
-        // VINÍLICOS
+        'tarimas': ['tarima exterior de bambú', 'tarima exterior sintética'],
+        'bambú': ['tarima exterior de bambú', 'tarima exterior sintética'],
+        'bambu': ['tarima exterior de bambú', 'tarima exterior sintética'],
         'vinílico': ['suelo vinílico en clic', 'suelo vinílico autoportante', 'suelo vinílico pegado', 'suelo vinílico en rollo'],
         'vinilico': ['suelo vinílico en clic', 'suelo vinílico autoportante', 'suelo vinílico pegado', 'suelo vinílico en rollo'],
         'vinilo': ['suelo vinílico en clic', 'suelo vinílico autoportante', 'suelo vinílico pegado', 'suelo vinílico en rollo'],
-        
-        // OTRAS
         'madera': 'suelos de madera',
         'moqueta': 'moqueta',
         'cesped': 'césped artificial',
@@ -77,12 +64,10 @@ export default async function handler(req, res) {
         'revestimiento': 'revestimiento vinílico mural'
       };
       
-      // PRIMERO: Buscar por palabras clave específicas
+      // Buscar por palabras clave
       let foundByKeyword = false;
       for (const [keyword, target] of Object.entries(keywordMap)) {
         if (cleanQuery.includes(keyword)) {
-          console.log(`🎯 Palabra clave encontrada: ${keyword}`);
-          
           const targets = Array.isArray(target) ? target : [target];
           targets.forEach(targetCat => {
             const match = categories.find(cat => cat.categoria === targetCat);
@@ -94,16 +79,14 @@ export default async function handler(req, res) {
         }
       }
       
-      // SEGUNDO: Si no hay coincidencia por palabra clave, buscar directo
+      // Si no hay por palabra clave, buscar directo
       if (!foundByKeyword) {
         categories.forEach(item => {
           const category = item.categoria.toLowerCase();
           
-          // Coincidencia exacta
           if (cleanQuery === category) {
             matches.push({ ...item, score: 1.0 });
           }
-          // Coincidencia parcial
           else if (category.includes(cleanQuery) || cleanQuery.includes(category)) {
             matches.push({ ...item, score: 0.7 });
           }
@@ -114,12 +97,11 @@ export default async function handler(req, res) {
     };
 
     const matches = findMatches(userMessage, rows);
-    console.log('🎯 Coincidencias:', matches);
 
     let reply = "";
 
     if (matches.length > 0) {
-      // Para "bambú" y "tarima" mostrar SIEMPRE ambas
+      // Mostrar resultados encontrados
       const showBothTarimas = userMessage.includes('bambu') || userMessage.includes('bambú') || userMessage.includes('tarima');
       
       if (matches.length === 1 && !showBothTarimas) {
@@ -127,16 +109,11 @@ export default async function handler(req, res) {
         reply = `Perfecto, te interesan los **${match.categoria}**. Puedes ver nuestro catálogo completo aquí: [Ver catálogo de ${match.categoria}](${match.link})`;
       }
       else {
-        // Mostrar todas las opciones relevantes
         const relevantMatches = showBothTarimas 
           ? matches.filter(m => m.categoria.includes('tarima'))
-          : matches.slice(0, 5); // Máximo 5 resultados
+          : matches.slice(0, 5);
         
-        if (relevantMatches.length === 0) {
-          const match = matches[0];
-          reply = `Perfecto, te interesan los **${match.categoria}**. Puedes ver nuestro catálogo completo aquí: [Ver catálogo de ${match.categoria}](${match.link})`;
-        }
-        else if (relevantMatches.length === 1) {
+        if (relevantMatches.length === 1) {
           const match = relevantMatches[0];
           reply = `Perfecto, te interesan los **${match.categoria}**. Puedes ver nuestro catálogo completo aquí: [Ver catálogo de ${match.categoria}](${match.link})`;
         }
@@ -152,18 +129,50 @@ export default async function handler(req, res) {
         }
       }
     } else {
-      // Respuesta simple cuando no encuentra nada
-      reply = `Te recomiendo explorar nuestro [catálogo completo](https://distiplas.ayudaweb.com.es/productos/) para ver todas nuestras opciones disponibles.`;
+      // 4️⃣ Cuando NO encuentra coincidencias, usar OpenAI con prompt MEJORADO
+      const availableCategories = rows.map(r => r.categoria).join(', ');
+      
+      const prompt = `Eres IAGreeView, el asistente virtual de Distiplas, especialistas en suelos y revestimientos.
+
+CATEGORÍAS QUE SÍ TENEMOS: ${availableCategories}
+
+INSTRUCCIONES CRÍTICAS:
+1. Si el usuario pregunta por SUELOS, PISOS, REVESTIMIENTOS o cualquier cosa relacionada con construcción/reforma, recomienda nuestras categorías disponibles
+2. Si pregunta por algo TOTALMENTE NO RELACIONADO (comida, animales, clima, etc.), responde como un asistente amable pero indica que solo puedes ayudar con suelos
+3. Si pregunta sobre TI MISMO (nombre, quién eres), presenta tu función como asistente de Distiplas
+4. Si no estás seguro, ofrece ayuda general sobre suelos
+5. Sé natural, amable y útil
+
+Usuario: "${message}"`;
+
+      const aiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: prompt },
+            { role: "user", content: message },
+          ],
+          temperature: 0.7,
+          max_tokens: 150,
+        }),
+      });
+
+      const data = await aiResponse.json();
+      reply = data.choices?.[0]?.message?.content || 
+        "Soy IAGreeView, tu asistente virtual de Distiplas. ¿En qué puedo ayudarte con suelos y revestimientos?";
     }
 
-    console.log('💬 Respuesta final:', reply);
     res.status(200).json({ reply });
 
   } catch (error) {
     console.error("❌ Error:", error);
     res.status(500).json({ 
-      error: "Error al procesar la solicitud.",
-      details: error.message 
+      error: "Error al procesar la solicitud."
     });
   }
 }
