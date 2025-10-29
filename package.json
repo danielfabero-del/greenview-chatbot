@@ -1,6 +1,7 @@
 {
   "type": "module",
   "dependencies": {
-    "openai": "^4.67.3"
+    "openai": "^4.67.3",
+    "googleapis": "^126.0.1"
   }
 }
