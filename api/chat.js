@@ -12,10 +12,30 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Falta el campo message" });
 
   try {
-    // 1️⃣ URL pública de tu Google Sheet (CSV)
+    // 🔧 DETECCIÓN DE CITA (SOLO ESTA PARTE NUEVA)
+    const detectarCita = (text) => {
+      const palabrasCita = ['cita', 'agendar', 'reservar', 'disponibilidad', 'horario', 'reunión', 'consulta', 'visita', 'asesoría', 'agenda'];
+      return palabrasCita.some(palabra => text.toLowerCase().includes(palabra));
+    };
+
+    if (detectarCita(message)) {
+      return res.status(200).json({ 
+        reply: `¡Perfecto! Veo que quieres agendar una cita. 
+
+Para coordinar tu visita o asesoría, por favor proporciona:
+📅 **Fecha** que te conviene  
+⏰ **Horario** preferido  
+📋 **Breve descripción** de lo que necesitas
+
+Ejemplo: "Quiero cita para el 15 de diciembre a las 10:00 para ver suelos laminados"
+
+¿Qué fecha y hora te viene bien?`
+      });
+    }
+
+    // ✅ TU CÓDIGO ORIGINAL (TODO IGUAL)
     const SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQlxUuVr4XYbPHeIQwI1eQNDnDskBii1PoXwb2F3jry-q4bNcBI8niVnALh4epc5y_4zPEXVTAx0IO_/pub?output=csv";
 
-    // 2️⃣ Descargar y procesar CSV
     const csvResponse = await fetch(SHEET_URL);
     const csvText = await csvResponse.text();
     
@@ -36,7 +56,6 @@ export default async function handler(req, res) {
       })
       .filter(row => row && row.categoria && row.link);
 
-    // 3️⃣ Búsqueda MÁS AGRESIVA - ENCONTRAR SIEMPRE QUE EXISTA
     const userMessage = message.toLowerCase().trim();
 
     const findMatches = (query, categories) => {
@@ -44,25 +63,20 @@ export default async function handler(req, res) {
       
       const cleanQuery = query.replace(/[¿?]/g, '').trim();
       
-      // PRIMERO: Búsqueda DIRECTA en todas las categorías
       categories.forEach(item => {
         const category = item.categoria.toLowerCase();
         
-        // Coincidencia EXACTA
         if (cleanQuery === category) {
           matches.push({ ...item, score: 1.0 });
         }
-        // Categoría CONTIENE consulta
         else if (category.includes(cleanQuery)) {
           matches.push({ ...item, score: 0.9 });
         }
-        // Consulta CONTIENE categoría
         else if (cleanQuery.includes(category)) {
           matches.push({ ...item, score: 0.8 });
         }
       });
 
-      // SEGUNDO: Si no hay coincidencias directas, buscar por palabras
       if (matches.length === 0) {
         const searchWords = cleanQuery.split(/\s+/).filter(word => word.length > 3);
         
@@ -70,7 +84,6 @@ export default async function handler(req, res) {
           const category = item.categoria.toLowerCase();
           let score = 0;
           
-          // Cada palabra de la consulta en la categoría
           searchWords.forEach(word => {
             if (category.includes(word)) {
               score += 0.3;
@@ -91,11 +104,9 @@ export default async function handler(req, res) {
 
     let reply = "";
 
-    // REGLA PRINCIPAL: SI HAY COINCIDENCIA > 0.5, MOSTRAR ENLACE SIEMPRE
     const goodMatches = matches.filter(m => m.score >= 0.5);
     
     if (goodMatches.length > 0) {
-      // SIEMPRE dar enlace directo cuando hay coincidencia buena
       if (goodMatches.length === 1) {
         const match = goodMatches[0];
         reply = `**${match.categoria}** - [Ver catálogo completo aquí](${match.link})`;
@@ -107,7 +118,6 @@ export default async function handler(req, res) {
           `\n\n¿Te interesa alguna en particular?`;
       }
     } else {
-      // SOLO OpenAI cuando NO HAY NINGUNA coincidencia
       const availableCategories = rows.map(r => r.categoria).join(', ');
       
       const prompt = `Eres IAGreeView, asistente de Distiplas. Especialista en suelos.
@@ -144,7 +154,6 @@ Usuario: "${message}"`;
         reply = data.choices?.[0]?.message?.content || 
           "¿En qué puedo ayudarte con nuestros suelos y revestimientos?";
       } catch (aiError) {
-        // Si OpenAI falla, respuesta de respaldo
         reply = "¿Te interesa algún tipo de suelo en particular? Tenemos opciones como suelos laminados, de madera, vinílicos, y más.";
       }
     }
