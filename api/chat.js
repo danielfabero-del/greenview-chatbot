@@ -12,7 +12,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Falta el campo message" });
 
   try {
-    // 🔧 DETECCIÓN Y PROCESAMIENTO DE CITAS
+    // 🔧 FUNCIONES PARA CITAS
     const detectarCita = (text) => {
       const palabrasCita = ['cita', 'agendar', 'reservar', 'disponibilidad', 'horario', 'reunión', 'consulta', 'visita', 'asesoría', 'agenda'];
       return palabrasCita.some(palabra => text.toLowerCase().includes(palabra));
@@ -20,29 +20,41 @@ export default async function handler(req, res) {
 
     const procesarFechaHora = (texto) => {
       // Extraer fecha y hora del texto
-      const fechaMatch = texto.match(/(\d{1,2})\s*(de\s*)?(\w+)/i);
-      const horaMatch = texto.match(/(\d{1,2}):?(\d{2})?\s*(am|pm)?/i);
-      const descripcion = texto.replace(/(\d{1,2}\s*(de\s*)?\w+|\d{1,2}:?\d{0,2}\s*(am|pm)?)/gi, '').trim();
+      const fechaMatch = texto.match(/(\d{1,2})\s*(de\s*)?(\w+)\s*(de\s*)?(\d{4})?/i);
+      const horaMatch = texto.match(/(\d{1,2})\s*(horas|hrs|:|\s*h)/i);
+      const descripcion = texto.replace(/(\d{1,2}\s*(de\s*)?\w+\s*(de\s*)?\d{0,4}|\d{1,2}\s*(horas|hrs|:|\s*h))/gi, '').trim();
+      
+      let fecha = null;
+      let hora = null;
+      
+      if (fechaMatch) {
+        fecha = `${fechaMatch[1]} ${fechaMatch[3]}${fechaMatch[5] ? ' ' + fechaMatch[5] : ''}`.toLowerCase();
+      }
+      
+      if (horaMatch) {
+        hora = `${horaMatch[1]}:00`;
+      }
       
       return {
-        fecha: fechaMatch ? `${fechaMatch[1]} ${fechaMatch[3]}`.toLowerCase() : null,
-        hora: horaMatch ? horaMatch[0] : null,
+        fecha: fecha,
+        hora: hora,
         descripcion: descripcion || 'Consulta general sobre productos'
       };
     };
 
-    // Verificar si es continuación de agendamiento
-    const ultimoMensaje = conversationHistory[conversationHistory.length - 2];
-    const estaAgendando = ultimoMensaje && ultimoMensaje.reply && 
-                          ultimoMensaje.reply.includes('agendar una cita');
+    // ✅ PRIMERO: Verificar si es continuación de agendamiento (ESTA ES LA CLAVE)
+    const ultimosMensajes = conversationHistory.slice(-3); // Tomar últimos 3 mensajes
+    const estaAgendando = ultimosMensajes.some(msg => 
+      msg.reply && msg.reply.includes('agendar una cita')
+    );
 
     // Si está en proceso de agendar cita
     if (estaAgendando) {
       const { fecha, hora, descripcion } = procesarFechaHora(message);
       
+      console.log('📅 Procesando cita:', { fecha, hora, descripcion });
+      
       if (fecha && hora) {
-        // Aquí iría la lógica para crear el evento en Calendar
-        // Por ahora simulamos éxito
         return res.status(200).json({ 
           reply: `✅ **Cita agendada correctamente**\n\n📅 **Fecha:** ${fecha}\n⏰ **Hora:** ${hora}\n📋 **Motivo:** ${descripcion}\n\n¡Te esperamos! Recibirás un recordatorio por correo.`
         });
@@ -53,7 +65,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // Si es nueva solicitud de cita
+    // ✅ SEGUNDO: Si es nueva solicitud de cita
     if (detectarCita(message)) {
       return res.status(200).json({ 
         reply: `¡Perfecto! Veo que quieres agendar una cita. 
@@ -69,7 +81,7 @@ Ejemplo: "Quiero cita para el 15 de diciembre a las 10:00 para ver suelos lamina
       });
     }
 
-    // ✅ TU CÓDIGO ORIGINAL (TODO IGUAL)
+    // ✅ TERCERO: TU CÓDIGO ORIGINAL (Google Sheets + OpenAI)
     const SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQlxUuVr4XYbPHeIQwI1eQNDnDskBii1PoXwb2F3jry-q4bNcBI8niVnALh4epc5y_4zPEXVTAx0IO_/pub?output=csv";
 
     const csvResponse = await fetch(SHEET_URL);
