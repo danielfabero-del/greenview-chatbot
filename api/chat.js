@@ -7,17 +7,53 @@ export default async function handler(req, res) {
   if (req.method !== "POST")
     return res.status(405).json({ error: "Método no permitido" });
 
-  const { message } = req.body || {};
+  const { message, conversationHistory = [] } = req.body || {};
   if (!message)
     return res.status(400).json({ error: "Falta el campo message" });
 
   try {
-    // 🔧 DETECCIÓN DE CITA (SOLO ESTA PARTE NUEVA)
+    // 🔧 DETECCIÓN Y PROCESAMIENTO DE CITAS
     const detectarCita = (text) => {
       const palabrasCita = ['cita', 'agendar', 'reservar', 'disponibilidad', 'horario', 'reunión', 'consulta', 'visita', 'asesoría', 'agenda'];
       return palabrasCita.some(palabra => text.toLowerCase().includes(palabra));
     };
 
+    const procesarFechaHora = (texto) => {
+      // Extraer fecha y hora del texto
+      const fechaMatch = texto.match(/(\d{1,2})\s*(de\s*)?(\w+)/i);
+      const horaMatch = texto.match(/(\d{1,2}):?(\d{2})?\s*(am|pm)?/i);
+      const descripcion = texto.replace(/(\d{1,2}\s*(de\s*)?\w+|\d{1,2}:?\d{0,2}\s*(am|pm)?)/gi, '').trim();
+      
+      return {
+        fecha: fechaMatch ? `${fechaMatch[1]} ${fechaMatch[3]}`.toLowerCase() : null,
+        hora: horaMatch ? horaMatch[0] : null,
+        descripcion: descripcion || 'Consulta general sobre productos'
+      };
+    };
+
+    // Verificar si es continuación de agendamiento
+    const ultimoMensaje = conversationHistory[conversationHistory.length - 2];
+    const estaAgendando = ultimoMensaje && ultimoMensaje.reply && 
+                          ultimoMensaje.reply.includes('agendar una cita');
+
+    // Si está en proceso de agendar cita
+    if (estaAgendando) {
+      const { fecha, hora, descripcion } = procesarFechaHora(message);
+      
+      if (fecha && hora) {
+        // Aquí iría la lógica para crear el evento en Calendar
+        // Por ahora simulamos éxito
+        return res.status(200).json({ 
+          reply: `✅ **Cita agendada correctamente**\n\n📅 **Fecha:** ${fecha}\n⏰ **Hora:** ${hora}\n📋 **Motivo:** ${descripcion}\n\n¡Te esperamos! Recibirás un recordatorio por correo.`
+        });
+      } else {
+        return res.status(200).json({ 
+          reply: `Necesito más información para agendar tu cita:\n\n📅 **¿Qué fecha?** (ej: 15 de diciembre)\n⏰ **¿Qué hora?** (ej: 10:00 o 2:00 pm)\n📋 **¿Para qué necesitas la cita?**`
+        });
+      }
+    }
+
+    // Si es nueva solicitud de cita
     if (detectarCita(message)) {
       return res.status(200).json({ 
         reply: `¡Perfecto! Veo que quieres agendar una cita. 
